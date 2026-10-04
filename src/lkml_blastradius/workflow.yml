@@ -1,4 +1,4 @@
-# Daily Blast radius report (written by `lkblast init`).
+# Daily LookML blast radius report (written by `lkblast init`).
 # Repo secrets: LOOKER_BASE_URL, LOOKER_CLIENT_ID, LOOKER_CLIENT_SECRET, SLACK_WEBHOOK_URL (optional).
 # Snapshot history is kept in the Actions cache; it is refreshed every run, so it does not expire.
 name: lkml-blastradius

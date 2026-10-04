@@ -47,7 +47,7 @@ releases:
   lookback_days: 7          # on the first run
 
 storage:
-  dir: .lkblast            # snapshots (gzipped JSON, metadata only)
+  dir: .lkblast             # snapshots (gzipped JSON, metadata only)
   keep: 30                  # snapshots to keep
 
 report:
