@@ -1,0 +1,50 @@
+# Daily Looker impact report (written by `lkimpact init`).
+# Repo secrets: LOOKER_BASE_URL, LOOKER_CLIENT_ID, LOOKER_CLIENT_SECRET, SLACK_WEBHOOK_URL (optional).
+# Snapshot history is kept in the Actions cache; it is refreshed every run, so it does not expire.
+name: looker-impact
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily
+  workflow_dispatch: {}
+
+concurrency: looker-impact
+
+jobs:
+  impact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install looker-impact
+      - name: Restore snapshot history
+        uses: actions/cache/restore@v4
+        with:
+          path: .lkimpact
+          key: lkimpact-${{ github.run_id }}
+          restore-keys: lkimpact-
+      - name: Run
+        env:
+          LOOKER_BASE_URL: ${{ secrets.LOOKER_BASE_URL }}
+          LOOKER_CLIENT_ID: ${{ secrets.LOOKER_CLIENT_ID }}
+          LOOKER_CLIENT_SECRET: ${{ secrets.LOOKER_CLIENT_SECRET }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: lkimpact run
+      - name: Save snapshot history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .lkimpact
+          key: lkimpact-${{ github.run_id }}
+      - name: Job summary
+        if: always()
+        run: test -f reports/impact.md && cat reports/impact.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: looker-impact-report
+          path: reports/
+          retention-days: 30
