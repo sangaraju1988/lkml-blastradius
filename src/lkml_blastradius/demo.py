@@ -6,6 +6,9 @@ Day 1 is the baseline. Before day 2:
 * ``finance_project`` renames ``customers.region`` to ``customers.sales_region`` and relabels
   ``orders.order_count``;
 * Looker is upgraded 26.14.2 -> 26.16.1, and Google publishes (sample) release notes.
+
+The push demo (``lkblast demo --push``) checks the same LookML change as a pushed commit on a
+feature branch, through development mode, before it reaches production.
 """
 
 from __future__ import annotations
@@ -321,8 +324,62 @@ SAMPLE_CA_PAGE = """<html><body>
 that query BigQuery and Looker.</p></div></div></body></html>"""
 
 
+REGION_ERRORS: list[dict[str, Any]] = [
+    {
+        "dashboard": {"id": "1", "title": "Executive revenue"},
+        "dashboard_element": {"id": "12", "dashboard_id": "1", "title": "Revenue by region"},
+        "errors": [
+            {
+                "message": 'Unknown field "customers.region"',
+                "field_name": "customers.region",
+                "model_name": "finance",
+                "explore_name": "orders",
+            }
+        ],
+    },
+    {
+        "dashboard": {"id": "1", "title": "Executive revenue"},
+        "dashboard_filter": {"id": "f1", "dashboard_id": "1", "name": "region", "title": "Region"},
+        "errors": [
+            {
+                "message": 'Unknown field "customers.region"',
+                "field_name": "customers.region",
+                "model_name": "finance",
+                "explore_name": "orders",
+            }
+        ],
+    },
+]
+
+
+def day2_lookml(explores: dict[tuple[str, str], dict[str, Any]]) -> None:
+    """The LookML change of the demo: new net_revenue SQL, region renamed, a label and a
+    description changed (all in finance::orders)."""
+    orders = explores[("finance", "orders")]
+    dims, measures = orders["fields"]["dimensions"], orders["fields"]["measures"]
+    for m in measures:
+        if m["name"] == "orders.net_revenue":
+            m["sql"] = "${TABLE}.gross_amount - ${TABLE}.refund_amount - ${TABLE}.discount_amount"
+            m["description"] = "Revenue after refunds and discounts."
+        if m["name"] == "orders.gross_revenue":
+            m["description"] = "Revenue before refunds, discounts and tax."
+        if m["name"] == "orders.order_count":
+            m["label"] = "Order count"
+    for d in dims:
+        if d["name"] == "customers.region":
+            d["name"], d["label"] = "customers.sales_region", "Sales region"
+
+
+Explores = dict[tuple[str, str], dict[str, Any]]
+
+
 class FakeLooker:
-    """Serves the Looker API endpoints lkml-blastradius uses, plus the release-note pages."""
+    """Serves the Looker API endpoints lkml-blastradius uses, plus the release-note pages.
+
+    Development mode is modelled per API session: ``PATCH /session`` selects the workspace of
+    the token; in "dev" the explores of a project come from the commit its dev branch points at
+    (``commits``), and the content validator returns that commit's errors.
+    """
 
     def __init__(self) -> None:
         self.version = "26.14.2"
@@ -339,61 +396,90 @@ class FakeLooker:
         self.validation: list[dict[str, Any]] = []
         self.release_day = "2000-01-01"
         self.fail: set[str] = set()  # paths that return HTTP 500 (for tests)
+        # development mode
+        self.tokens: dict[str, str] = {}  # token -> workspace
+        self.branches = {p: {"dev-api-user": r} for p, r in self.refs.items()}
+        self.checkout = dict.fromkeys(self.refs, "dev-api-user")
+        self.commits: dict[str, tuple[Explores, list[dict[str, Any]]]] = {}
+        self.reject_create_with_ref = False
+        self.calls: list[str] = []  # non-GET calls, for tests
 
     def apply_day2(self) -> None:
-        orders = self.explores[("finance", "orders")]
-        dims, measures = orders["fields"]["dimensions"], orders["fields"]["measures"]
-        for m in measures:
-            if m["name"] == "orders.net_revenue":
-                m["sql"] = (
-                    "${TABLE}.gross_amount - ${TABLE}.refund_amount - ${TABLE}.discount_amount"
-                )
-                m["description"] = "Revenue after refunds and discounts."
-            if m["name"] == "orders.gross_revenue":
-                m["description"] = "Revenue before refunds, discounts and tax."
-            if m["name"] == "orders.order_count":
-                m["label"] = "Order count"
-        for d in dims:
-            if d["name"] == "customers.region":
-                d["name"], d["label"] = "customers.sales_region", "Sales region"
+        day2_lookml(self.explores)
         self.refs["core_project"] = "e81d9f4"
         self.refs["finance_project"] = "77aa0b2"
         self.version = "26.16.1"
-        self.validation = [
-            {
-                "dashboard": {"id": "1", "title": "Executive revenue"},
-                "dashboard_element": {
-                    "id": "12",
-                    "dashboard_id": "1",
-                    "title": "Revenue by region",
-                },
-                "errors": [
-                    {
-                        "message": 'Unknown field "customers.region"',
-                        "field_name": "customers.region",
-                        "model_name": "finance",
-                        "explore_name": "orders",
-                    }
-                ],
-            },
-            {
-                "dashboard": {"id": "1", "title": "Executive revenue"},
-                "dashboard_filter": {
-                    "id": "f1",
-                    "dashboard_id": "1",
-                    "name": "region",
-                    "title": "Region",
-                },
-                "errors": [
-                    {
-                        "message": 'Unknown field "customers.region"',
-                        "field_name": "customers.region",
-                        "model_name": "finance",
-                        "explore_name": "orders",
-                    }
-                ],
-            },
-        ]
+        self.validation = copy.deepcopy(REGION_ERRORS)
+
+    def add_commit(
+        self,
+        sha: str,
+        change: Callable[[Explores], None],
+        validation: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """A commit pushed to a team's repo: production LookML with ``change`` applied."""
+        explores = copy.deepcopy(self.explores)
+        change(explores)
+        self.commits[sha] = (explores, validation if validation is not None else self.validation)
+
+    # --- views of the instance for one session -----------------------------------------------
+
+    def _dev_refs(self) -> dict[str, str]:
+        return {p: self.branches[p][b] for p, b in self.checkout.items()}
+
+    def _view(self, workspace: str) -> tuple[Explores, list[dict[str, Any]]]:
+        if workspace != "dev":
+            return self.explores, self.validation
+        out = dict(self.explores)
+        validation = self.validation
+        for project, ref in self._dev_refs().items():
+            if ref in self.commits:
+                explores, validation = self.commits[ref]
+                out = {k: v for k, v in out.items() if v["project_name"] != project}
+                out.update({k: v for k, v in explores.items() if v["project_name"] == project})
+        return out, validation
+
+    def _git(self, req: httpx.Request, ws: str, project: str, name: str | None) -> Any:
+        if project not in self.branches:
+            return httpx.Response(404)
+        if req.method == "GET":
+            if ws != "dev":
+                return {"name": "production", "ref": self.refs[project], "is_production": True}
+            b = self.checkout[project]
+            return {"name": b, "ref": self.branches[project][b]}
+        if ws != "dev":
+            return httpx.Response(400, json={"message": "Only allowed in development mode"})
+        body = json.loads(req.content or b"{}")
+        self.calls.append(f"{req.method} {project} {name or body.get('name', '')}".strip())
+        if req.method == "DELETE":
+            if name == self.checkout[project] or name not in self.branches[project]:
+                return httpx.Response(400, json={"message": "cannot delete branch"})
+            del self.branches[project][name]
+            self.calls[-1] += " (local+remote)"
+            return httpx.Response(204)
+        new, ref = body.get("name"), body.get("ref")
+        if req.method == "POST":
+            if ref and self.reject_create_with_ref:
+                return httpx.Response(422, json={"message": "ref not found locally"})
+            known = (
+                set(self.commits) | set(self.refs.values()) | set(self.branches[project].values())
+            )
+            if ref and ref not in known:
+                return httpx.Response(404, json={"message": f"unknown ref {ref}"})
+            head = self.branches[project][self.checkout[project]]
+            self.branches[project][new] = ref or head
+            self.checkout[project] = new
+        else:  # PUT: checkout, and reset when ref is given
+            if new not in self.branches[project]:
+                return httpx.Response(404)
+            self.checkout[project] = new
+            if ref:
+                self.branches[project][new] = ref
+                self.calls[-1] += f" reset->{ref} (force-push)"
+        return {
+            "name": self.checkout[project],
+            "ref": self.branches[project][self.checkout[project]],
+        }
 
     def _route(self, req: httpx.Request) -> Any:
         path = req.url.path
@@ -408,22 +494,39 @@ class FakeLooker:
             return httpx.Response(200, text=SAMPLE_CA_PAGE.format(anchor=day, pretty=pretty))
         p = path.removeprefix("/api/4.0")
         if p == "/login":
-            return {"access_token": "fake-token", "token_type": "Bearer", "expires_in": 3600}
-        if req.headers.get("Authorization") != "Bearer fake-token":
+            token = f"fake-token-{len(self.tokens) + 1}"
+            self.tokens[token] = "production"  # every new session starts in production
+            return {"access_token": token, "token_type": "Bearer", "expires_in": 3600}
+        token = req.headers.get("Authorization", "").removeprefix("Bearer ")
+        if token not in self.tokens:
             return httpx.Response(401)
+        ws = self.tokens[token]
+        if p == "/session" and req.method == "PATCH":
+            self.tokens[token] = json.loads(req.content)["workspace_id"]
+            self.calls.append(f"PATCH session {self.tokens[token]}")
+            return {"workspace_id": self.tokens[token]}
+        m = re.fullmatch(r"/projects/([^/]+)/git_branch(?:/([^/]+))?", p)
+        if m:
+            return self._git(req, ws, m.group(1), m.group(2))
+        if req.method != "GET":
+            return httpx.Response(405)
+        explores, validation = self._view(ws)
         offset, limit = (
             int(req.url.params.get("offset", 0)),
             int(req.url.params.get("limit", 10**6)),
         )
+        merge = {
+            "id": "m1",
+            "source_queries": [
+                {"query_id": "110", "name": "Invoices"},
+                {"query_id": "111", "name": "Orders"},
+            ],
+        }
         routes: list[tuple[str, Callable[..., Any]]] = [
             (r"/versions", lambda: {"looker_release_version": self.version}),
             (r"/projects", lambda: [{"id": p} for p in self.refs]),
-            (
-                r"/projects/([^/]+)/git_branch",
-                lambda p: {"name": "production", "ref": self.refs[p]},
-            ),
-            (r"/lookml_models", self._models),
-            (r"/lookml_models/([^/]+)/explores/([^/]+)", lambda m, e: self.explores[(m, e)]),
+            (r"/lookml_models", lambda: self._models(explores)),
+            (r"/lookml_models/([^/]+)/explores/([^/]+)", lambda m, e: explores[(m, e)]),
             (
                 r"/dashboards/search",
                 lambda: [{"id": k} for k in self.dashboards][offset : offset + limit],
@@ -432,31 +535,23 @@ class FakeLooker:
             (r"/looks/search", lambda: [{"id": k} for k in self.looks][offset : offset + limit]),
             (r"/looks/([^/]+)", lambda lid: self.looks[lid]),
             (r"/queries/([^/]+)", lambda q: self.queries[q]),
-            (
-                r"/merge_queries/([^/]+)",
-                lambda _m: {
-                    "id": "m1",
-                    "source_queries": [
-                        {"query_id": "110", "name": "Invoices"},
-                        {"query_id": "111", "name": "Orders"},
-                    ],
-                },
-            ),
+            (r"/merge_queries/([^/]+)", lambda _m: merge),
             (r"/agents/search", lambda: self.agents[offset : offset + limit]),
-            (r"/content_validation", lambda: {"content_with_errors": self.validation}),
+            (r"/content_validation", lambda: {"content_with_errors": validation}),
         ]
         for pattern, fn in routes:
-            m = re.fullmatch(pattern, p)
-            if m:
+            match = re.fullmatch(pattern, p)
+            if match:
                 try:
-                    return fn(*m.groups())
+                    return fn(*match.groups())
                 except KeyError:
                     return httpx.Response(404)
         return httpx.Response(404)
 
-    def _models(self) -> list[dict[str, Any]]:
+    @staticmethod
+    def _models(explores: Explores) -> list[dict[str, Any]]:
         models: dict[str, dict[str, Any]] = {}
-        for (m, e), data in self.explores.items():
+        for (m, e), data in explores.items():
             models.setdefault(m, {"name": m, "project_name": data["project_name"], "explores": []})
             models[m]["explores"].append({"name": e})
         return list(models.values())
@@ -497,3 +592,18 @@ def run_demo(out: Path, log: Callable[[str], None] = lambda _m: None) -> Report:
         http_transport=fake.transport(),
     )
     return report
+
+
+PUSH_SHA = "5d3a9c1e7b2f4a6d8c0e1f2a3b4c5d6e7f8a9b0c"
+
+
+def run_push_demo(log: Callable[[str], None] = lambda _m: None) -> tuple[Report, FakeLooker]:
+    """A team pushes the day-2 LookML change to branch feature/net-revenue-discounts."""
+    from lkml_blastradius.check import CheckTarget, run_check
+
+    fake = FakeLooker()
+    fake.add_commit(PUSH_SHA, day2_lookml, REGION_ERRORS)
+    log("push: finance_project @ feature/net-revenue-discounts")
+    target = CheckTarget("finance_project", PUSH_SHA, "feature/net-revenue-discounts")
+    report = run_check(Config(root=Path.cwd(), workers=4), fake.client(), target, log=log)
+    return report, fake

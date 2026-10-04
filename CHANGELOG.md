@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 (2026-10-04)
+
+- **On every push:** `lkblast check --project P --ref SHA` checks a pushed commit against production
+  in Looker development mode, on a temporary `lkblast-*` branch that is always cleaned up. It never
+  checks out or resets team branches.
+- **GitHub Action** (`uses: sangaraju1988/lkml-blastradius@v0`): job summary, report artifact, one PR
+  comment updated in place, optional `fail-on` gate. It works on self-hosted runners (proxy,
+  internal CA, no Python download).
+- `lkblast init --push PROJECT` writes the per-team workflow; `lkblast comment` posts the PR comment.
+- `lkblast demo --push`.
+- Fix: a re-login after an expired token no longer uses up a retry, and re-selects the dev workspace.
+
 ## 0.1.0 (2026-10-03)
 
 First release.

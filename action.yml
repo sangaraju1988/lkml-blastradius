@@ -1,0 +1,131 @@
+name: LookML blast radius
+description: >-
+  Which production dashboards, Looks, explores and Conversational Analytics agents a LookML push
+  would affect, checked in Looker development mode before it is deployed.
+author: Venkata Sangaraju
+branding:
+  icon: target
+  color: orange
+
+inputs:
+  project:
+    description: LookML project name in Looker.
+    required: true
+  looker-base-url:
+    description: Looker URL, e.g. https://yourcompany.cloud.looker.com
+    required: true
+  looker-client-id:
+    description: API client id of a user with `develop` on the project.
+    required: true
+  looker-client-secret:
+    description: API client secret.
+    required: true
+  models:
+    description: Extra models to check, comma-separated (for projects imported by other projects).
+    default: ""
+  fail-on:
+    description: "Fail the job at this severity: breaking | results | ai_context | cosmetic | never."
+    default: never
+  content-validator:
+    description: Run Looker's content validator on production and on the pushed LookML.
+    default: "true"
+  comment:
+    description: Create or update one comment on the open pull request for this commit.
+    default: "true"
+  slack-webhook-url:
+    description: Optional Slack incoming webhook for a summary.
+    default: ""
+  setup-python:
+    description: Install Python with actions/setup-python. Set "false" on self-hosted runners that already have Python 3.11+.
+    default: "true"
+  ca-bundle:
+    description: Path to a PEM CA bundle for a Looker with an internal certificate (sets SSL_CERT_FILE).
+    default: ""
+  ref:
+    description: "Commit to check (default: the pushed commit)."
+    default: ${{ github.event.pull_request.head.sha || github.sha }}
+  label:
+    description: Branch name shown in the report.
+    default: ${{ github.head_ref || github.ref_name }}
+
+outputs:
+  worst:
+    description: "Worst severity found: breaking | results | ai_context | cosmetic | none."
+    value: ${{ steps.check.outputs.worst }}
+  report-dir:
+    description: Directory with blastradius.md, .html and .json.
+    value: ${{ steps.check.outputs.report-dir }}
+
+runs:
+  using: composite
+  steps:
+    - if: inputs.setup-python == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install lkml-blastradius
+      shell: bash
+      run: |
+        python3 -m venv "$RUNNER_TEMP/lkblast-venv"
+        "$RUNNER_TEMP/lkblast-venv/bin/pip" install --quiet --disable-pip-version-check "$GITHUB_ACTION_PATH"
+
+    - name: Blast radius
+      id: check
+      shell: bash
+      env:
+        LOOKER_BASE_URL: ${{ inputs.looker-base-url }}
+        LOOKER_CLIENT_ID: ${{ inputs.looker-client-id }}
+        LOOKER_CLIENT_SECRET: ${{ inputs.looker-client-secret }}
+        SLACK_WEBHOOK_URL: ${{ inputs.slack-webhook-url }}
+        CA_BUNDLE: ${{ inputs.ca-bundle }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_MODELS: ${{ inputs.models }}
+        INPUT_REF: ${{ inputs.ref }}
+        INPUT_LABEL: ${{ inputs.label }}
+        INPUT_CONTENT_VALIDATOR: ${{ inputs.content-validator }}
+      run: |
+        if [ -z "$LOOKER_BASE_URL" ] || [ -z "$LOOKER_CLIENT_ID" ]; then
+          echo "::error::Looker credentials are empty (secrets are not passed to workflows from forks)"
+          exit 2
+        fi
+        if [ -n "$CA_BUNDLE" ]; then export SSL_CERT_FILE="$CA_BUNDLE"; fi
+        out="$RUNNER_TEMP/lkblast-report"
+        echo "report-dir=$out" >> "$GITHUB_OUTPUT"
+        args=(check --project "$INPUT_PROJECT" --ref "$INPUT_REF" --label "$INPUT_LABEL" -o "$out" --fail-on never)
+        if [ -n "$INPUT_MODELS" ]; then args+=(--models "$INPUT_MODELS"); fi
+        if [ "$INPUT_CONTENT_VALIDATOR" != "true" ]; then args+=(--no-content-validator); fi
+        "$RUNNER_TEMP/lkblast-venv/bin/lkblast" "${args[@]}"
+        worst=$("$RUNNER_TEMP/lkblast-venv/bin/python" -c 'import json,sys; print(json.load(open(sys.argv[1]))["worst"] or "none")' "$out/blastradius.json")
+        echo "worst=$worst" >> "$GITHUB_OUTPUT"
+        cat "$out/blastradius.md" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload report
+      if: always() && steps.check.outputs.report-dir != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: lkml-blastradius-${{ inputs.project }}-${{ github.run_attempt }}
+        path: ${{ steps.check.outputs.report-dir }}
+        if-no-files-found: ignore
+
+    - name: Comment on the pull request
+      if: inputs.comment == 'true' && steps.check.outputs.worst != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        "$RUNNER_TEMP/lkblast-venv/bin/lkblast" comment "${{ steps.check.outputs.report-dir }}/blastradius.md" \
+          || echo "::warning::could not comment on the pull request (needs permissions: pull-requests: write)"
+
+    - name: Gate
+      if: inputs.fail-on != 'never'
+      shell: bash
+      env:
+        WORST: ${{ steps.check.outputs.worst }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        rank() { case "$1" in breaking) echo 3;; results) echo 2;; ai_context) echo 1;; cosmetic) echo 0;; *) echo -1;; esac; }
+        if [ "$(rank "$WORST")" -ge "$(rank "$FAIL_ON")" ] && [ "$(rank "$WORST")" -ge 0 ]; then
+          echo "::error::blast radius '$WORST' reaches fail-on '$FAIL_ON'"
+          exit 1
+        fi

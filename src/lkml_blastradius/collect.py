@@ -152,12 +152,19 @@ class Collector:
 
     # --- LookML ----------------------------------------------------------------------------
 
-    def explores(self) -> tuple[dict[str, ExploreDef], dict[str, str]]:
+    def explores(
+        self, project: str | None = None, extra_models: list[str] | None = None
+    ) -> tuple[dict[str, ExploreDef], dict[str, str]]:
+        """Explores of the configured models; with ``project``, of that project's models (plus
+        ``extra_models``, e.g. models in other projects that import it)."""
         pairs: list[tuple[str, str, str]] = []
         projects: dict[str, str] = {}
         for m in self.c.models():
             name = _s(m.get("name"))
-            if self.cfg.models and name not in self.cfg.models:
+            if project is not None:
+                if _s(m.get("project_name")) != project and name not in (extra_models or []):
+                    continue
+            elif self.cfg.models and name not in self.cfg.models:
                 continue
             for e in m.get("explores") or []:
                 pairs.append((name, _s(m.get("project_name")), _s(e.get("name"))))

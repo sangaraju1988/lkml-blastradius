@@ -43,11 +43,21 @@ def headline(r: Report) -> list[str]:
     counts = [f"{len(v)} {TITLES[k].lower()}" for k, v in sev.items() if v]
     if r.baseline:
         bits.append("baseline saved (first run: changes are reported from the next run on)")
+    elif r.mode == "check":
+        bits.append(", ".join(counts) if counts else "no production content affected")
     else:
         bits.append(
             ", ".join(counts) if counts else "no content affected by semantic-layer changes"
         )
-    if r.validator_ran and not r.baseline:
+    if r.mode == "check":
+        if r.validator_ran:
+            fixed = f", fixes {len(r.resolved_errors)}" if r.resolved_errors else ""
+            bits.append(
+                f"content validator: {len(r.new_errors)} new error(s) from this push{fixed}"
+            )
+        if not r.changes:
+            bits.append("no LookML difference from production in this project's explores")
+    elif r.validator_ran and not r.baseline:
         bits.append(f"{len(r.new_errors)} new content error(s), {r.open_errors} open")
     elif r.validator_ran:
         bits.append(f"{r.open_errors} open content error(s)")
@@ -82,10 +92,25 @@ def _md_param(c: Change) -> list[str]:
     return out
 
 
+def _title(r: Report) -> str:
+    if r.mode == "check":
+        return f"Blast radius: {r.subject}"
+    return f"Blast radius report: {_day(r.head_at)} UTC"
+
+
+def _since(r: Report) -> str:
+    if r.mode == "check":
+        return "compared with production"
+    return f"compared with {_day(r.base_at)} UTC" if r.base_at else "first run (baseline)"
+
+
+MARKER = "<!-- lkml-blastradius -->"
+
+
 def render_markdown(r: Report) -> str:
-    L = [f"# Blast radius report: {_day(r.head_at)} UTC", ""]
-    since = f"compared with {_day(r.base_at)} UTC" if r.base_at else "first run"
-    L.append(f"`{r.instance}` · {since} · Looker {r.version[1] or '?'}")
+    cause_col = r.mode != "check"  # in check mode every change comes from the push
+    L = [MARKER, f"# {_title(r)}", ""]
+    L.append(f"`{r.instance}` · {_since(r)} · Looker {r.version[1] or '?'}")
     L += ["", *[f"- **{b}**" for b in headline(r)], ""]
 
     if r.impacts:
@@ -97,14 +122,15 @@ def render_markdown(r: Report) -> str:
                 "",
                 f"### {TITLES[sev]} ({len(items)})",
                 "",
-                "| Content | Type | What changed | Cause |",
-                "|---|---|---|---|",
+                "| Content | Type | What changed |" + (" Cause |" if cause_col else ""),
+                "|---|---|---|" + ("---|" if cause_col else ""),
             ]
             for i in items[:MD_ROWS]:
+                cause = f" {_md_cell('; '.join(i.causes))} |" if cause_col else ""
                 L.append(
                     f"| {_md_link(_name(i), i.item.url)} | {KINDS.get(i.item.kind, i.item.kind)} "
-                    f"| {_md_cell('; '.join(i.reasons[:3]))}{' …' if len(i.reasons) > 3 else ''} "
-                    f"| {_md_cell('; '.join(i.causes))} |"
+                    f"| {_md_cell('; '.join(i.reasons[:3]))}{' …' if len(i.reasons) > 3 else ''} |"
+                    + cause
                 )
             if len(items) > MD_ROWS:
                 L.append(f"\n…and {len(items) - MD_ROWS} more (see report.html)")
@@ -138,7 +164,9 @@ def render_markdown(r: Report) -> str:
             if c.explore_key != current:
                 current = c.explore_key
                 L += ["", f"#### `{current}`", ""]
-            L.append(f"- **{c.describe()}** ({c.category}) · {c.cause}")
+            L.append(
+                f"- **{c.describe()}** ({c.category})" + (f" · {c.cause}" if cause_col else "")
+            )
             L += _md_param(c)
         L.append("")
 
@@ -237,18 +265,19 @@ def _diff_html(c: Change) -> str:
 
 
 def render_html(r: Report) -> str:
+    cause_col = r.mode != "check"
+    cause_th = "<th>Cause</th>" if cause_col else ""
     sev = r.by_severity()
     tiles = [(len(sev[k]), TITLES[k], k) for k in sev]
     tiles.append((len(r.new_errors), "New content errors", "breaking"))
     tiles.append((len(r.changes), "LookML changes", "cosmetic"))
     tiles.append((sum(1 for x in r.releases if x.attention), "Google notes to review", "results"))
-    since = f"compared with {_day(r.base_at)} UTC" if r.base_at else "first run (baseline)"
     out = [
         "<!doctype html><html lang=en><head><meta charset=utf-8>",
         '<meta name=viewport content="width=device-width,initial-scale=1">',
-        f"<title>Blast radius {_e(_day(r.head_at)[:10])}</title><style>{CSS}</style></head><body><main>",
-        f"<h1>Blast radius report</h1><div class=meta>{_e(r.instance)} · {_e(_day(r.head_at))} UTC · "
-        f"{_e(since)} · Looker {_e(r.version[1] or '?')}</div>",
+        f"<title>{_e(_title(r))}</title><style>{CSS}</style></head><body><main>",
+        f"<h1>{_e(_title(r))}</h1><div class=meta>{_e(r.instance)} · {_e(_day(r.head_at))} UTC · "
+        f"{_e(_since(r))} · Looker {_e(r.version[1] or '?')}</div>",
         '<div class="tiles">',
         *[
             f'<div class="tile"><b style="color:{"var(--" + k + ")" if n else "inherit"}">{n}</b>'
@@ -278,7 +307,7 @@ def render_html(r: Report) -> str:
             f"<h2>Impacted content ({len(r.impacts)})</h2>",
             '<input data-filter="impacts" placeholder="Filter by name, field, folder…">',
             '<div class="wrap"><table id="impacts"><thead><tr><th>Severity</th><th>Content</th>'
-            "<th>Type</th><th>What changed</th><th>Cause</th></tr></thead><tbody>",
+            f"<th>Type</th><th>What changed</th>{cause_th}</tr></thead><tbody>",
         ]
         for i in r.impacts:
             folder = f'<div class="muted">{_e(i.item.folder)}</div>' if i.item.folder else ""
@@ -286,7 +315,8 @@ def render_html(r: Report) -> str:
                 f"<tr><td>{_pill(i.severity)}</td><td>{_a(_name(i), i.item.url)}{folder}</td>"
                 f"<td>{_e(KINDS.get(i.item.kind, i.item.kind))}</td>"
                 f"<td>{'<br>'.join(_e(x) for x in i.reasons)}</td>"
-                f"<td>{'<br>'.join(_e(x) for x in i.causes)}</td></tr>"
+                + (f"<td>{'<br>'.join(_e(x) for x in i.causes)}</td>" if cause_col else "")
+                + "</tr>"
             )
         out.append("</tbody></table></div>")
 
@@ -316,12 +346,14 @@ def render_html(r: Report) -> str:
             f"<h2>LookML changes ({len(r.changes)})</h2>",
             '<input data-filter="changes" placeholder="Filter by explore, field…">',
             '<div class="wrap"><table id="changes"><thead><tr><th>Category</th><th>Explore</th>'
-            "<th>Change</th><th>Cause</th></tr></thead><tbody>",
+            f"<th>Change</th>{cause_th}</tr></thead><tbody>",
         ]
         for c in r.changes:
             out.append(
                 f"<tr><td>{_pill(c.category)}</td><td><code>{_e(c.explore_key)}</code></td>"
-                f"<td><b>{_e(c.describe())}</b>{_diff_html(c)}</td><td>{_e(c.cause)}</td></tr>"
+                f"<td><b>{_e(c.describe())}</b>{_diff_html(c)}</td>"
+                + (f"<td>{_e(c.cause)}</td>" if cause_col else "")
+                + "</tr>"
             )
         out.append("</tbody></table></div>")
 
@@ -373,7 +405,12 @@ def slack_payload(r: Report, link: str = "") -> dict[str, Any]:
         "ai_context": ":large_purple_circle:",
         "cosmetic": ":white_circle:",
     }.get(worst or "", ":large_green_circle:")
-    lines = [f"{icon} *Blast radius {_day(r.head_at)[:10]}*", *[f"• {b}" for b in headline(r)]]
+    title = (
+        f"Blast radius: {r.subject}"
+        if r.mode == "check"
+        else f"Blast radius {_day(r.head_at)[:10]}"
+    )
+    lines = [f"{icon} *{title}*", *[f"• {b}" for b in headline(r)]]
     for i in r.impacts[:8]:
         name = f"<{i.item.url}|{_name(i)}>" if i.item.url else _name(i)
         lines.append(f"  {TITLES[i.severity]}: {name} ({KINDS.get(i.item.kind, i.item.kind)})")

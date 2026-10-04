@@ -1,13 +1,18 @@
 # lkml-blastradius
 
-**The blast radius of every Looker change.** Every morning: what changed (LookML deploys, Looker
-upgrades, Google releases), and which dashboards, Looks, explores and Conversational Analytics
-agents it hits.
+**The blast radius of every Looker change.** Which dashboards, Looks, explores and Conversational
+Analytics agents a change hits, and how badly. It works in two ways:
+
+- **On every push** to a LookML repo, as a GitHub Action: what this commit *would* do to production
+  content, checked in Looker development mode before it is deployed. The result is a job summary and
+  one PR comment that is updated on each push.
+- **Every morning**: what actually changed in production (LookML deploys, Looker upgrades, Google
+  releases) since yesterday.
 
 ```bash
 pip install lkml-blastradius
-lkblast init    # writes blastradius.yaml + a daily GitHub Actions workflow
-lkblast run     # snapshot Looker, compare with yesterday, write the report
+lkblast init --push finance_project   # on-every-push workflow for one LookML repo
+lkblast init                          # daily workflow + blastradius.yaml
 ```
 
 Each run takes a metadata snapshot through the Looker API and compares it with the previous one:
@@ -61,6 +66,80 @@ open lkblast-demo/reports/blastradius.html
 
 The *Refund watch* Look and the *Logistics helper* agent are not listed because nothing they use changed.
 
+## On every push (for all teams)
+
+Each team adds one workflow file to its LookML repo. `lkblast init --push <project>` writes it:
+
+```yaml
+on:
+  push:
+    branches-ignore: ["lkblast-*"]   # lkblast's temporary branches (see below)
+permissions: {contents: read, pull-requests: write}
+concurrency: {group: lkml-blastradius-finance_project, cancel-in-progress: false}
+jobs:
+  blast-radius:
+    runs-on: ${{ vars.LKBLAST_RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - uses: sangaraju1988/lkml-blastradius@v0
+        with:
+          project: finance_project
+          looker-base-url: ${{ secrets.LOOKER_BASE_URL }}
+          looker-client-id: ${{ secrets.LOOKER_CLIENT_ID }}
+          looker-client-secret: ${{ secrets.LOOKER_CLIENT_SECRET }}
+          fail-on: never        # or `breaking` to block merges that break production content
+```
+
+Set the three secrets once as **organization secrets**, and every team's workflow picks them up.
+
+What one run does (`lkblast check`):
+
+1. **Production:** reads the project's explores, the dashboards, Looks and CA agents that use them,
+   and the content validator errors.
+2. **Development mode:** creates a temporary branch `lkblast-<sha>` at the pushed commit in the API
+   user's dev workspace. It reads the same explores as Looker compiles them there, so includes,
+   extends, refinements and imports are all resolved by Looker itself, and runs the content
+   validator against that LookML.
+3. **Cleanup, always, even on failure:** checks out the API user's original dev branch again, deletes
+   the temporary branch (locally and on the remote), and switches the session back to production.
+   The team's own branches are never checked out or reset.
+4. **Report:** the difference, mapped to production content, with the same severities as below. It
+   goes to the job summary, an artifact (md/html/json) and one PR comment updated in place.
+
+Things to know:
+
+- **The API user needs `develop`** on the project, plus `see_lookml`, `see_user_dashboards` and
+  `see_looks`.
+- **Temporary branches appear in your git remote** for a few seconds, because Looker pushes branches it
+  creates. The generated workflow ignores `lkblast-*` pushes, so they don't trigger it again. Other
+  CI that runs on every branch should ignore them too.
+- **Runs for one project are queued,** not run in parallel (one API user has one dev checkout per
+  project). The `concurrency` group handles this.
+- **Projects without models** (imported by others): pass the importing models with `models:`.
+
+Action inputs: `project`, `looker-base-url`, `looker-client-id`, `looker-client-secret`, `models`,
+`fail-on`, `content-validator`, `comment`, `slack-webhook-url`, `setup-python`, `ca-bundle`,
+`ref`, `label`. Outputs: `worst`, `report-dir`. Try it offline with `lkblast demo --push`.
+
+## When GitHub can't reach Looker (internal Looker, private IP, Looker core in a VPC)
+
+You don't need a network path from github.com into your network. A job runs on a **runner**, and
+a runner only makes **outbound** HTTPS connections to GitHub to pick up work. So put a runner where
+Looker is reachable:
+
+| Setup | How |
+|---|---|
+| **Self-hosted runner inside the network** (most common) | A VM or Kubernetes pod in the network or VPC that can reach Looker, registered to an **organization runner group** with a label such as `looker`. Set the org variable `LKBLAST_RUNS_ON=looker`, and every team's workflow runs there without editing the file. On GKE, Actions Runner Controller scales runners automatically. |
+| **Looker (Google Cloud core) with private IP / PSC** | Run that self-hosted runner in the same VPC, or in a VPC peered or connected to it. |
+| **GitHub-hosted larger runners with private networking** (GitHub Enterprise Cloud) | Azure private networking puts GitHub-hosted runners in your VNet. Alternatively, use static outbound IPs and allowlist them on a Looker that has an IP allowlist. |
+| **GitHub Enterprise Server** (on-premises) | Its runners are usually already inside the network. `GITHUB_API_URL` is honored for the PR comment. |
+
+On self-hosted runners:
+
+- `setup-python: "false"` uses the runner's own Python 3.11+, with no download from the internet.
+- `HTTPS_PROXY` / `NO_PROXY` are honored for Looker and GitHub calls. `PIP_INDEX_URL` points pip at
+  an internal mirror.
+- `ca-bundle: /path/to/corp-ca.pem` (or `SSL_CERT_FILE`) handles a Looker with an internal certificate.
+
 ## Run it daily (GitHub Actions + Slack)
 
 1. `lkblast init` in any repo (it can be an otherwise empty repo).
@@ -105,8 +184,9 @@ instance are ignored.
 
 ## What it does not do
 
-- It reports changes **after** they reach production (daily). It doesn't check a LookML branch
-  before merge.
+- The daily mode reports changes after they reach production. Push mode checks LookML before
+  deploy, but only the project you push (plus `models:`). Changes in other projects, or in content
+  edited in the UI, show up in the daily report.
 - It never runs queries and stores no row data. It can't see a number change that comes from the
   warehouse data itself.
 - It can't see a Google change that alters behavior but not metadata, such as how an agent picks

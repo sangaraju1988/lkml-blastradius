@@ -1,6 +1,6 @@
 [project]
 name = "lkml-blastradius"
-version = "0.1.0"
+version = "0.2.0"
 description = "The blast radius of every Looker change: which dashboards, Looks, explores and Conversational Analytics agents a LookML deploy or Google release affects, reported daily."
 readme = "README.md"
 license = "Apache-2.0"

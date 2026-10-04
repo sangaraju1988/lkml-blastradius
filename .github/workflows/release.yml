@@ -6,7 +6,7 @@
 name: release
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"] # full versions only; the moving major tag (v0) does not trigger a release
 permissions:
   contents: read
 jobs:
@@ -47,6 +47,11 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" \
             --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/$GITHUB_REF_NAME/CHANGELOG.md)."
+      - name: Move the major tag (teams use `sangaraju1988/lkml-blastradius@v0`)
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$major"
 
   pypi:
     needs: build

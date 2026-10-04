@@ -20,3 +20,31 @@ jobs:
       - run: uv run mypy
       - run: uv run pytest
       - run: uv run lkblast demo
+      - run: uv run lkblast demo --push
+
+  action:
+    # Runs the composite action (uses: ./) against a fake Looker served on localhost.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Start a fake Looker
+        run: |
+          python -m pip install --quiet .
+          python scripts/fake_looker_server.py 8765 "$GITHUB_SHA" &
+          sleep 2
+      - uses: ./
+        id: blast
+        with:
+          project: finance_project
+          looker-base-url: http://127.0.0.1:8765
+          looker-client-id: ci
+          looker-client-secret: ci
+          setup-python: "false"
+          comment: "false"
+      - name: Check outputs
+        run: |
+          test "${{ steps.blast.outputs.worst }}" = breaking
+          grep -q "Revenue by region" "${{ steps.blast.outputs.report-dir }}/blastradius.md"

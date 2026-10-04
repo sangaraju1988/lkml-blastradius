@@ -1,0 +1,33 @@
+# LookML blast radius on every push (written by `lkblast init --push`).
+# Shows which production dashboards, Looks and CA agents this push would affect, before deploy.
+#
+# Org/repo secrets: LOOKER_BASE_URL, LOOKER_CLIENT_ID, LOOKER_CLIENT_SECRET (API user with
+# `develop` on this project). Optional org/repo variable LKBLAST_RUNS_ON: the label of a
+# self-hosted runner that can reach Looker when Looker is not reachable from GitHub's runners.
+name: lkml-blastradius
+
+on:
+  push:
+    branches-ignore:
+      - "lkblast-*" # lkblast's own temporary branches: never trigger on them
+
+permissions:
+  contents: read
+  pull-requests: write # update the blast-radius comment on the open PR
+
+concurrency:
+  group: lkml-blastradius-__PROJECT__ # one check per project at a time (one Looker dev checkout)
+  cancel-in-progress: false
+
+jobs:
+  blast-radius:
+    runs-on: ${{ vars.LKBLAST_RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    steps:
+      - uses: sangaraju1988/lkml-blastradius@v0
+        with:
+          project: __PROJECT__
+          looker-base-url: ${{ secrets.LOOKER_BASE_URL }}
+          looker-client-id: ${{ secrets.LOOKER_CLIENT_ID }}
+          looker-client-secret: ${{ secrets.LOOKER_CLIENT_SECRET }}
+          fail-on: never # or: breaking, to block merges that break production content

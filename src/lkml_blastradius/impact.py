@@ -60,10 +60,12 @@ class Report:
     content_counts: dict[str, int] = field(default_factory=dict)
     explore_count: int = 0
     warnings: list[str] = field(default_factory=list)
+    mode: str = "daily"  # daily: today vs the last run | check: a pushed commit vs production
+    subject: str = ""  # check mode: "finance_project @ feature/x (abc1234)"
 
     @property
     def baseline(self) -> bool:
-        return self.base_at is None
+        return self.base_at is None and self.mode == "daily"
 
     @property
     def upgraded(self) -> bool:
@@ -196,7 +198,14 @@ def _mentions_version(n: ReleaseNote, version: str) -> bool:
     return bool(version) and f"Looker {short}" in n.text
 
 
-def build_report(base: Snapshot | None, head: Snapshot, lookback_days: int = 7) -> Report:
+def build_report(
+    base: Snapshot | None,
+    head: Snapshot,
+    lookback_days: int = 7,
+    *,
+    cause: str | None = None,
+) -> Report:
+    """``cause`` overrides attribution (check mode: every change comes from the pushed commit)."""
     r = Report(
         instance=head.instance,
         base_at=base.taken_at if base else None,
@@ -224,6 +233,6 @@ def build_report(base: Snapshot | None, head: Snapshot, lookback_days: int = 7) 
             r.deploys[p] = (a, b)
     r.changes = diff_explores(base, head)
     for c in r.changes:
-        c.cause = attribute(c, r.deploys, r.version)
+        c.cause = cause if cause is not None else attribute(c, r.deploys, r.version)
     r.impacts = impacts_for(base, head, r.changes)
     return r
