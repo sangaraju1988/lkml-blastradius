@@ -273,7 +273,7 @@ wheels = [
 ]
 
 [[package]]
-name = "looker-impact"
+name = "lkml-blastradius"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

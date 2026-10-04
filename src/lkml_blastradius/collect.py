@@ -9,9 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
-from looker_impact.config import Config
-from looker_impact.looker import LookerClient, LookerError
-from looker_impact.model import (
+from lkml_blastradius.config import Config
+from lkml_blastradius.looker import LookerClient, LookerError
+from lkml_blastradius.model import (
     ContentItem,
     ExploreDef,
     FieldDef,

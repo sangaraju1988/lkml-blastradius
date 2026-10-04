@@ -1,12 +1,13 @@
-# looker-impact
+# lkml-blastradius
 
-**Every morning: what changed in Looker, and which dashboards, Looks, explores and
-Conversational Analytics agents it affects.**
+**The blast radius of every Looker change.** Every morning: what changed (LookML deploys, Looker
+upgrades, Google releases), and which dashboards, Looks, explores and Conversational Analytics
+agents it hits.
 
 ```bash
-pip install looker-impact
-lkimpact init          # writes impact.yaml + a daily GitHub Actions workflow
-lkimpact run           # snapshot Looker, compare with yesterday, write the report
+pip install lkml-blastradius
+lkblast init    # writes blastradius.yaml + a daily GitHub Actions workflow
+lkblast run     # snapshot Looker, compare with yesterday, write the report
 ```
 
 Each run takes a metadata snapshot through the Looker API and compares it with the previous one:
@@ -37,8 +38,8 @@ the upgrade line, the matching release notes, and the content validator.
 ## Try it offline
 
 ```bash
-lkimpact demo          # two days on a fake Looker (fictional Harborline Supply Co.)
-open lkimpact-demo/reports/impact.html
+lkblast demo    # two days on a fake Looker (fictional Harborline Supply Co.)
+open lkblast-demo/reports/blastradius.html
 ```
 
 ```
@@ -62,13 +63,13 @@ The *Refund watch* Look and the *Logistics helper* agent are not listed because 
 
 ## Run it daily (GitHub Actions + Slack)
 
-1. `lkimpact init` in any repo (it can be an otherwise empty repo).
+1. `lkblast init` in any repo (it can be an otherwise empty repo).
 2. Add repository secrets: `LOOKER_BASE_URL`, `LOOKER_CLIENT_ID`, `LOOKER_CLIENT_SECRET`, and
    optionally `SLACK_WEBHOOK_URL`.
-3. Push. The workflow runs at 06:00 UTC daily (change the cron in `.github/workflows/looker-impact.yml`)
+3. Push. The workflow runs at 06:00 UTC daily (change the cron in `.github/workflows/lkml-blastradius.yml`)
    or on demand from the Actions tab.
 
-Every run writes `reports/impact.{md,html,json}`. The Markdown goes to the job summary, the reports are
+Every run writes `reports/blastradius.{md,html,json}`. The Markdown goes to the job summary, the reports are
 uploaded as an artifact, and a short summary with a link to the run is posted to Slack. Snapshot history
 lives in the Actions cache. Each run refreshes it, so it doesn't expire while the job runs daily.
 
@@ -81,20 +82,20 @@ report still works but can't tell a LookML deploy from a Looker upgrade.
 
 ## Options
 
-`impact.yaml` (written by `lkimpact init`; every key is optional):
+`blastradius.yaml` (written by `lkblast init`; every key is optional):
 
 ```yaml
 looker:   {models: [], workers: 8, timeout_seconds: 120}
 content:  {dashboards: true, looks: true, looker_agents: true, content_validator: true}
 ca_api:   {enabled: false, locations: [global]}   # + GOOGLE_CLOUD_PROJECT, GOOGLE_OAUTH_ACCESS_TOKEN
 releases: {enabled: true, lookback_days: 7}
-storage:  {dir: .lkimpact, keep: 30}
+storage:  {dir: .lkblast, keep: 30}
 report:   {dir: reports}
 ```
 
 ```bash
-lkimpact run --fail-on breaking          # exit 1 when something breaks (for alerting)
-lkimpact compare OLD.json.gz NEW.json.gz # report between any two saved snapshots
+lkblast run --fail-on breaking          # exit 1 when something breaks (for alerting)
+lkblast compare OLD.json.gz NEW.json.gz # report between any two saved snapshots
 ```
 
 To include **CA API data agents**, set `ca_api.enabled: true` and provide `GOOGLE_CLOUD_PROJECT`
@@ -116,9 +117,9 @@ instance are ignored.
 
 Every Looker endpoint and attribute used is checked against Looker's OpenAPI spec
 (`looker-open-source/sdk-codegen`, `spec/Looker.4.0.oas.json`, 4.0.26.12). The list is in the
-docstring of [`looker.py`](src/looker_impact/looker.py). `/agents` is marked **beta** by Looker.
+docstring of [`looker.py`](src/lkml_blastradius/looker.py). `/agents` is marked **beta** by Looker.
 CA API fields come from the v1 REST reference. Release-note formats were checked on 2026-10-03
-(see [`releases.py`](src/looker_impact/releases.py)). If Google changes the page layout, the run
+(see [`releases.py`](src/lkml_blastradius/releases.py)). If Google changes the page layout, the run
 records a warning and continues.
 
 ## Development

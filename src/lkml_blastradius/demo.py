@@ -20,10 +20,10 @@ from typing import Any
 
 import httpx
 
-from looker_impact.config import Config
-from looker_impact.impact import Report
-from looker_impact.looker import LookerClient
-from looker_impact.run import run
+from lkml_blastradius.config import Config
+from lkml_blastradius.impact import Report
+from lkml_blastradius.looker import LookerClient
+from lkml_blastradius.run import run
 
 BASE_URL = "https://harborline.looker.example"
 CORE = "imported_projects/core_project/views/orders.view.lkml"
@@ -322,7 +322,7 @@ that query BigQuery and Looker.</p></div></div></body></html>"""
 
 
 class FakeLooker:
-    """Serves the Looker API endpoints looker-impact uses, plus the release-note pages."""
+    """Serves the Looker API endpoints lkml-blastradius uses, plus the release-note pages."""
 
     def __init__(self) -> None:
         self.version = "26.14.2"

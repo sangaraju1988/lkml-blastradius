@@ -8,9 +8,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from looker_impact import __version__
-from looker_impact.diff import Change
-from looker_impact.impact import Impact, Report
+from lkml_blastradius import __version__
+from lkml_blastradius.diff import Change
+from lkml_blastradius.impact import Impact, Report
 
 TITLES = {
     "breaking": "Breaking",
@@ -83,7 +83,7 @@ def _md_param(c: Change) -> list[str]:
 
 
 def render_markdown(r: Report) -> str:
-    L = [f"# Looker impact report: {_day(r.head_at)} UTC", ""]
+    L = [f"# Blast radius report: {_day(r.head_at)} UTC", ""]
     since = f"compared with {_day(r.base_at)} UTC" if r.base_at else "first run"
     L.append(f"`{r.instance}` · {since} · Looker {r.version[1] or '?'}")
     L += ["", *[f"- **{b}**" for b in headline(r)], ""]
@@ -168,7 +168,7 @@ def render_markdown(r: Report) -> str:
             "</details>",
             "",
         ]
-    L.append(f"<sub>looker-impact {__version__}</sub>")
+    L.append(f"<sub>lkml-blastradius {__version__}</sub>")
     return "\n".join(L) + "\n"
 
 
@@ -246,8 +246,8 @@ def render_html(r: Report) -> str:
     out = [
         "<!doctype html><html lang=en><head><meta charset=utf-8>",
         '<meta name=viewport content="width=device-width,initial-scale=1">',
-        f"<title>Looker impact {_e(_day(r.head_at)[:10])}</title><style>{CSS}</style></head><body><main>",
-        f"<h1>Looker impact report</h1><div class=meta>{_e(r.instance)} · {_e(_day(r.head_at))} UTC · "
+        f"<title>Blast radius {_e(_day(r.head_at)[:10])}</title><style>{CSS}</style></head><body><main>",
+        f"<h1>Blast radius report</h1><div class=meta>{_e(r.instance)} · {_e(_day(r.head_at))} UTC · "
         f"{_e(since)} · Looker {_e(r.version[1] or '?')}</div>",
         '<div class="tiles">',
         *[
@@ -349,7 +349,7 @@ def render_html(r: Report) -> str:
             "<h2>Warnings</h2><ul>" + "".join(f"<li>{_e(w)}</li>" for w in r.warnings) + "</ul>"
         )
     out.append(
-        f'<p class="muted">looker-impact {__version__} · metadata only, no query results</p>'
+        f'<p class="muted">lkml-blastradius {__version__} · metadata only, no query results</p>'
     )
     out.append(f"</main><script>{FILTER_JS}</script></body></html>")
     return "\n".join(out)
@@ -373,7 +373,7 @@ def slack_payload(r: Report, link: str = "") -> dict[str, Any]:
         "ai_context": ":large_purple_circle:",
         "cosmetic": ":white_circle:",
     }.get(worst or "", ":large_green_circle:")
-    lines = [f"{icon} *Looker impact {_day(r.head_at)[:10]}*", *[f"• {b}" for b in headline(r)]]
+    lines = [f"{icon} *Blast radius {_day(r.head_at)[:10]}*", *[f"• {b}" for b in headline(r)]]
     for i in r.impacts[:8]:
         name = f"<{i.item.url}|{_name(i)}>" if i.item.url else _name(i)
         lines.append(f"  {TITLES[i.severity]}: {name} ({KINDS.get(i.item.kind, i.item.kind)})")
@@ -387,9 +387,9 @@ def slack_payload(r: Report, link: str = "") -> dict[str, Any]:
 def write_reports(r: Report, out_dir: Path) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     files = {
-        "impact.md": render_markdown(r),
-        "impact.html": render_html(r),
-        "impact.json": render_json(r),
+        "blastradius.md": render_markdown(r),
+        "blastradius.html": render_html(r),
+        "blastradius.json": render_json(r),
     }
     paths = []
     for name, text in files.items():

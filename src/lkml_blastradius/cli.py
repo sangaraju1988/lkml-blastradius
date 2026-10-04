@@ -1,4 +1,4 @@
-"""``lkimpact``: init once, then ``lkimpact run`` every day."""
+"""``lkblast``: init once, then ``lkblast run`` every day."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from pathlib import Path
 
 import httpx
 
-from looker_impact import __version__
-from looker_impact.config import TEMPLATE, ConfigError, load_config
-from looker_impact.diff import SEVERITY
-from looker_impact.impact import Report
-from looker_impact.looker import LookerError
-from looker_impact.report import headline, slack_payload, write_reports
+from lkml_blastradius import __version__
+from lkml_blastradius.config import TEMPLATE, ConfigError, load_config
+from lkml_blastradius.diff import SEVERITY
+from lkml_blastradius.impact import Report
+from lkml_blastradius.looker import LookerError
+from lkml_blastradius.report import headline, slack_payload, write_reports
 
 WORKFLOW = Path(__file__).with_name("workflow.yml")
 
@@ -30,7 +30,7 @@ def _finish(report: Report, out_dir: Path, fail_on: str, slack: bool) -> int:
         print(f"  {line}")
     webhook = os.environ.get("SLACK_WEBHOOK_URL")
     if slack and webhook:
-        from looker_impact.run import post_slack, report_link
+        from lkml_blastradius.run import post_slack, report_link
 
         try:
             post_slack(webhook, slack_payload(report, report_link()))
@@ -47,8 +47,8 @@ def _finish(report: Report, out_dir: Path, fail_on: str, slack: bool) -> int:
 def cmd_init(a: argparse.Namespace) -> int:
     root = Path(a.dir)
     targets = {
-        root / "impact.yaml": TEMPLATE,
-        root / ".github/workflows/looker-impact.yml": WORKFLOW.read_text(encoding="utf-8"),
+        root / "blastradius.yaml": TEMPLATE,
+        root / ".github/workflows/lkml-blastradius.yml": WORKFLOW.read_text(encoding="utf-8"),
     }
     for path, text in targets.items():
         if path.exists() and not a.force:
@@ -60,15 +60,15 @@ def cmd_init(a: argparse.Namespace) -> int:
     print(
         "\nnext:\n"
         "  1. add repo secrets LOOKER_BASE_URL, LOOKER_CLIENT_ID, LOOKER_CLIENT_SECRET, SLACK_WEBHOOK_URL\n"
-        "  2. commit and push; the workflow runs daily (or now: Actions -> looker-impact -> Run)\n"
-        "  locally: export the same variables and run `lkimpact run`"
+        "  2. commit and push; the workflow runs daily (or now: Actions -> lkml-blastradius -> Run)\n"
+        "  locally: export the same variables and run `lkblast run`"
     )
     return 0
 
 
 def cmd_run(a: argparse.Namespace) -> int:
-    from looker_impact.looker import LookerClient
-    from looker_impact.run import run
+    from lkml_blastradius.looker import LookerClient
+    from lkml_blastradius.run import run
 
     cfg = load_config(Path(a.config) if a.config else None)
     client = LookerClient.from_env(timeout=cfg.timeout_seconds)
@@ -83,14 +83,14 @@ def cmd_run(a: argparse.Namespace) -> int:
 
 
 def cmd_compare(a: argparse.Namespace) -> int:
-    from looker_impact.run import compare
+    from lkml_blastradius.run import compare
 
     report = compare(Path(a.old), Path(a.new))
     return _finish(report, Path(a.out), a.fail_on, slack=False)
 
 
 def cmd_demo(a: argparse.Namespace) -> int:
-    from looker_impact.demo import run_demo
+    from lkml_blastradius.demo import run_demo
 
     report = run_demo(Path(a.out), log=_log)
     return _finish(report, Path(a.out) / "reports", "never", slack=False)
@@ -98,14 +98,14 @@ def cmd_demo(a: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        prog="lkimpact",
-        description="Daily Looker impact report: what changed (LookML deploys, Looker upgrades, "
+        prog="lkblast",
+        description="Daily Blast radius report: what changed (LookML deploys, Looker upgrades, "
         "Google release notes) and which dashboards, Looks, explores and CA agents it affects.",
     )
-    ap.add_argument("--version", action="version", version=f"lkimpact {__version__}")
+    ap.add_argument("--version", action="version", version=f"lkblast {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("init", help="write impact.yaml and a daily GitHub Actions workflow")
+    p = sub.add_parser("init", help="write blastradius.yaml and a daily GitHub Actions workflow")
     p.add_argument("dir", nargs="?", default=".")
     p.add_argument("--force", action="store_true")
     p.set_defaults(fn=cmd_init)
@@ -116,7 +116,9 @@ def main(argv: list[str] | None = None) -> int:
         "help": "exit 1 when impact reaches this severity (default: never)",
     }
     p = sub.add_parser("run", help="snapshot Looker, compare with the last run, write the report")
-    p.add_argument("-c", "--config", help="impact.yaml (default: ./impact.yaml if present)")
+    p.add_argument(
+        "-c", "--config", help="blastradius.yaml (default: ./blastradius.yaml if present)"
+    )
     p.add_argument("-o", "--out", help="report directory (default: report.dir)")
     p.add_argument("--no-slack", action="store_true", help="do not post to SLACK_WEBHOOK_URL")
     p.add_argument("--fail-on", **fail)  # type: ignore[arg-type]
@@ -130,14 +132,14 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_compare)
 
     p = sub.add_parser("demo", help="offline demo against a fake Looker instance (two days)")
-    p.add_argument("-o", "--out", default="lkimpact-demo")
+    p.add_argument("-o", "--out", default="lkblast-demo")
     p.set_defaults(fn=cmd_demo)
 
     a = ap.parse_args(argv)
     try:
         return int(a.fn(a))
     except (ConfigError, LookerError) as exc:
-        _log(f"lkimpact: {exc}")
+        _log(f"lkblast: {exc}")
         return 2
 
 

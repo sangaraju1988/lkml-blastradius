@@ -15,8 +15,8 @@ from typing import Any
 
 import httpx
 
-from looker_impact.collect import DOTTED, query_ref
-from looker_impact.model import ContentItem
+from lkml_blastradius.collect import DOTTED, query_ref
+from lkml_blastradius.model import ContentItem
 
 
 class CAError(Exception):

@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from looker_impact.diff import SEVERITY, Change, diff_explores
-from looker_impact.model import ContentItem, ReleaseNote, Snapshot, ValidationError
-from looker_impact.releases import areas, needs_attention, new_since
+from lkml_blastradius.diff import SEVERITY, Change, diff_explores
+from lkml_blastradius.model import ContentItem, ReleaseNote, Snapshot, ValidationError
+from lkml_blastradius.releases import areas, needs_attention, new_since
 
 AGENT_KINDS = {"looker_agent", "ca_agent"}
 DIALECTS = {

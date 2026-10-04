@@ -2,9 +2,9 @@ __pycache__/
 *.egg-info/
 .venv/
 dist/
-.lkimpact/
+.lkblast/
 reports/
-lkimpact-demo/
+lkblast-demo/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/

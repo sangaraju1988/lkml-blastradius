@@ -9,13 +9,13 @@ from pathlib import Path
 
 import httpx
 
-from looker_impact.ca_api import CAError, ca_agents
-from looker_impact.collect import Collector, collect
-from looker_impact.config import Config
-from looker_impact.impact import Report, build_report
-from looker_impact.looker import LookerClient
-from looker_impact.model import ContentItem, Snapshot, load, save
-from looker_impact.releases import fetch_release_notes
+from lkml_blastradius.ca_api import CAError, ca_agents
+from lkml_blastradius.collect import Collector, collect
+from lkml_blastradius.config import Config
+from lkml_blastradius.impact import Report, build_report
+from lkml_blastradius.looker import LookerClient
+from lkml_blastradius.model import ContentItem, Snapshot, load, save
+from lkml_blastradius.releases import fetch_release_notes
 
 Log = Callable[[str], None]
 KEEP_NOTES_DAYS = 120
@@ -81,8 +81,8 @@ def compare(old: Path, new: Path, lookback_days: int = 7) -> Report:
 
 
 def report_link() -> str:
-    if os.environ.get("LKIMPACT_REPORT_URL"):
-        return os.environ["LKIMPACT_REPORT_URL"]
+    if os.environ.get("LKBLAST_REPORT_URL"):
+        return os.environ["LKBLAST_REPORT_URL"]
     env = os.environ
     if env.get("GITHUB_RUN_ID") and env.get("GITHUB_REPOSITORY"):
         server = env.get("GITHUB_SERVER_URL", "https://github.com")

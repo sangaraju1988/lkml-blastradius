@@ -17,7 +17,7 @@ from datetime import date, datetime
 
 import httpx
 
-from looker_impact.model import ReleaseNote
+from lkml_blastradius.model import ReleaseNote
 
 ATOM = "{http://www.w3.org/2005/Atom}"
 ATTENTION_KINDS = {"breaking", "deprecated", "changed", "change", "issue", "removed"}

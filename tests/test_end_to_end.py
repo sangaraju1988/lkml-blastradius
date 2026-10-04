@@ -7,12 +7,12 @@ from pathlib import Path
 import httpx
 import pytest
 
-from looker_impact.cli import main
-from looker_impact.config import Config, load_config
-from looker_impact.demo import FakeLooker, run_demo
-from looker_impact.impact import Report
-from looker_impact.model import load
-from looker_impact.run import prune, run, snapshot_files
+from lkml_blastradius.cli import main
+from lkml_blastradius.config import Config, load_config
+from lkml_blastradius.demo import FakeLooker, run_demo
+from lkml_blastradius.impact import Report
+from lkml_blastradius.model import load
+from lkml_blastradius.run import prune, run, snapshot_files
 
 DAY1 = datetime(2026, 10, 1, 6, tzinfo=UTC)
 DAY2 = datetime(2026, 10, 2, 6, tzinfo=UTC)
@@ -149,18 +149,18 @@ def test_snapshots_are_pruned(tmp_path: Path) -> None:
 
 def test_cli_init_and_compare(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["init", str(tmp_path)]) == 0
-    assert (tmp_path / ".github/workflows/looker-impact.yml").exists()
-    cfg = load_config(tmp_path / "impact.yaml")
+    assert (tmp_path / ".github/workflows/lkml-blastradius.yml").exists()
+    cfg = load_config(tmp_path / "blastradius.yaml")
     assert cfg.content_validator and not cfg.ca_api and cfg.root == tmp_path.resolve()
 
     run_demo(tmp_path / "demo")
-    old, new = snapshot_files(tmp_path / "demo/.lkimpact/snapshots")
+    old, new = snapshot_files(tmp_path / "demo/.lkblast/snapshots")
     out = tmp_path / "cmp"
     assert main(["compare", str(old), str(new), "-o", str(out)]) == 0
     assert main(["compare", str(old), str(new), "-o", str(out), "--fail-on", "results"]) == 1
-    data = json.loads((out / "impact.json").read_text())
+    data = json.loads((out / "blastradius.json").read_text())
     assert data["worst"] == "breaking"
-    html = (out / "impact.html").read_text()
+    html = (out / "blastradius.html").read_text()
     assert "Revenue by region" in html and "<script>" in html
     assert "2 breaking" in capsys.readouterr().out
 
@@ -173,8 +173,8 @@ def test_cli_run_needs_credentials(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 
 
 def test_slack_post(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from looker_impact import cli
-    from looker_impact import run as run_mod
+    from lkml_blastradius import cli
+    from lkml_blastradius import run as run_mod
 
     sent: list[dict[str, str]] = []
 
@@ -204,7 +204,7 @@ def test_client_relogs_in_on_401() -> None:
             return httpx.Response(401)
         return httpx.Response(200, json={"looker_release_version": "26.16.1"})
 
-    from looker_impact.looker import LookerClient
+    from lkml_blastradius.looker import LookerClient
 
     c = LookerClient("https://x.example", "i", "s", transport=httpx.MockTransport(handler))
     assert c.version() == "26.16.1"

@@ -24,7 +24,7 @@ jobs:
         run: |
           uv venv /tmp/smoke --python 3.12
           uv pip install --python /tmp/smoke/bin/python dist/*.whl
-          cd /tmp && /tmp/smoke/bin/lkimpact demo -o /tmp/lkimpact-demo && /tmp/smoke/bin/lkimpact init /tmp/init-check
+          cd /tmp && /tmp/smoke/bin/lkblast demo -o /tmp/lkblast-demo && /tmp/smoke/bin/lkblast init /tmp/init-check
       - uses: actions/upload-artifact@v4
         with:
           name: dist

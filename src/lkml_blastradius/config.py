@@ -1,4 +1,4 @@
-"""``impact.yaml``. Every key is optional; secrets always come from environment variables."""
+"""``blastradius.yaml``. Every key is optional; secrets always come from environment variables."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ DEFAULT_RELEASE_SOURCES: list[dict[str, str]] = [
 ]
 
 TEMPLATE = """\
-# looker-impact configuration. Secrets come from environment variables, never from this file:
+# lkml-blastradius configuration. Secrets come from environment variables, never from this file:
 #   LOOKER_BASE_URL       e.g. https://yourcompany.cloud.looker.com
 #   LOOKER_CLIENT_ID / LOOKER_CLIENT_SECRET   API3 credentials of a user that can see all content
 #   SLACK_WEBHOOK_URL     optional: post the daily summary to Slack
@@ -47,7 +47,7 @@ releases:
   lookback_days: 7          # on the first run
 
 storage:
-  dir: .lkimpact            # snapshots (gzipped JSON, metadata only)
+  dir: .lkblast            # snapshots (gzipped JSON, metadata only)
   keep: 30                  # snapshots to keep
 
 report:
@@ -77,7 +77,7 @@ class Config:
     release_sources: list[dict[str, str]] = field(
         default_factory=lambda: [dict(s) for s in DEFAULT_RELEASE_SOURCES]
     )
-    storage_dir: str = ".lkimpact"
+    storage_dir: str = ".lkblast"
     keep: int = 30
     report_dir: str = "reports"
 
@@ -93,18 +93,18 @@ class Config:
 def _section(raw: dict[str, Any], name: str) -> dict[str, Any]:
     sec = raw.get(name) or {}
     if not isinstance(sec, dict):
-        raise ConfigError(f"impact.yaml: '{name}' must be a mapping")
+        raise ConfigError(f"blastradius.yaml: '{name}' must be a mapping")
     return sec
 
 
 def load_config(path: Path | None) -> Config:
-    """Load impact.yaml; a missing file means all defaults (rooted at the current directory)."""
+    """Load blastradius.yaml; a missing file means all defaults (rooted at the current directory)."""
     if path is None:
-        path = Path("impact.yaml")
+        path = Path("blastradius.yaml")
         if not path.exists():
             return Config(root=Path.cwd())
     if not path.exists():
-        raise ConfigError(f"{path} not found (create one with `lkimpact init`)")
+        raise ConfigError(f"{path} not found (create one with `lkblast init`)")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raise ConfigError(f"{path}: expected a mapping")

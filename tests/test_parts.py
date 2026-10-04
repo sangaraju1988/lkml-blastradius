@@ -5,9 +5,9 @@ from datetime import date
 
 import httpx
 
-from looker_impact.ca_api import agent_item, list_agents
-from looker_impact.collect import parse_validation, query_ref
-from looker_impact.releases import new_since, parse_atom, parse_devsite_html
+from lkml_blastradius.ca_api import agent_item, list_agents
+from lkml_blastradius.collect import parse_validation, query_ref
+from lkml_blastradius.releases import new_since, parse_atom, parse_devsite_html
 
 
 def test_query_ref_collects_every_field_reference() -> None:

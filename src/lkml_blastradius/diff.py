@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from looker_impact.model import ExploreDef, Snapshot
+from lkml_blastradius.model import ExploreDef, Snapshot
 
 SEVERITY = {"breaking": 3, "results": 2, "ai_context": 1, "cosmetic": 0}
 
